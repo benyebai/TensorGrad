@@ -14,19 +14,36 @@ class Tensor:
         self.name = name
         self._backward = lambda: None
 
+    # should be no different than scalar addition
     def __add__(self, other):
-        # python is stupid so we use it to do scalars
-        other = other if isinstance(other, Value) else Value(other)
-
-        res = Value(self.value + other.value, (self, other))
+        res = Tensor(self.data + other.data, (self, other))
 
         def _backward():
-            # since its addition, my grad is just
-            # the deriv of my "parent" * the deriv of myself to my parent which is 1 in the addition case
             self.grad += 1 * res.grad
             other.grad += 1 * res.grad
 
-        # then we install this backward function to our result! So when our result calls backwards he knows how to update us
         res._backward = _backward
 
         return res
+
+    def backward(self):
+        topologialReverseOrder = []
+        visited = set()
+
+        # its really not that deep, just make sure u traverse the graph once and add to list after u visit all its children
+        def create_top_reverse_order(node):
+            if node not in visited:
+                visited.add(node)
+
+                for n in node.children:
+                    create_top_reverse_order(n)
+
+                topologialReverseOrder.append(node)
+
+        create_top_reverse_order(self)
+
+        # this is important haha oops
+        self.grad = np.ones_like(self.data)
+
+        for n in reversed(topologialReverseOrder):
+            n._backward()
