@@ -5,7 +5,6 @@ https://github.com/benyebai/MiniGrad
 import numpy as np
 
 
-
 class Tensor:
     def __init__(self, data, children=(), name=""):
         self.data = np.asarray(data, dtype=np.float64)
@@ -16,15 +15,43 @@ class Tensor:
 
     # should be no different than scalar addition
     def __add__(self, other):
+        other = other if isinstance(other, Tensor) else Tensor(other)
+
         res = Tensor(self.data + other.data, (self, other))
 
+        def sum_to_shape(grad, shape):
+            # holy crap finally understood
+            # start from the back line em up, if its a 1 u sum up that dimension, if its equal u skip
+            # if its not 1 and its not equal, ur cooked
+            # and then any remaining on the left u just sum up
+
+            # summing from the left till dimension shape equal
+            while grad.ndim > len(shape):
+                grad = grad.sum(axis=0)
+
+            # so for like [3, 4, 5]  [1, 4, 1]
+            # you would sum that axis and keep the dimension
+            # imagine its a 4x5 sheet and then duplicate across the z axis by 3
+            # now same thing with 4x1 and then 1 sheet
+            # u collapse the 3 and then skip the 4 then collapse the 5 (but u just keep dims so it matches)
+            for axis_index, size in enumerate(shape):
+                if size == 1 and grad.shape[axis_index] != 1:
+                    grad = grad.sum(axis=axis_index, keepdims=True)
+                elif grad.shape[axis_index] != size:
+                    raise ValueError("ye this collapsation is not valid my guy")
+
+            return grad
+
         def _backward():
-            self.grad += 1 * res.grad
-            other.grad += 1 * res.grad
+            self.grad += sum_to_shape(res.grad, self.grad.shape)
+            other.grad += sum_to_shape(res.grad, other.grad.shape)
 
         res._backward = _backward
 
         return res
+
+    def __radd__(self, other):
+        return self + other
 
     def backward(self):
         topologialReverseOrder = []
