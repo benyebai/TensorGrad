@@ -14,6 +14,7 @@ class Tensor:
         self._backward = lambda: None
 
     # should be no different than scalar addition
+    # I lied nvm matrix is weird
     def __add__(self, other):
         other = other if isinstance(other, Tensor) else Tensor(other)
 
@@ -52,6 +53,29 @@ class Tensor:
 
     def __radd__(self, other):
         return self + other
+
+    # first create negation so then subtraction is already built in
+    def __neg__(self):
+
+        res = Tensor(-self.data, (self,))
+
+        def _backward():
+            # ok so it would look like
+            # y = -x
+            # then dy/dx = -1
+            self.grad += -1 * res.grad
+
+        res._backward = _backward
+
+        return res
+
+    def __sub__(self, other):
+        other = other if isinstance(other, Tensor) else Tensor(other)
+        return self + (-other)
+
+    def __rsub__(self, other):
+        other = other if isinstance(other, Tensor) else Tensor(other)
+        return other - self
 
     def backward(self):
         topologialReverseOrder = []
