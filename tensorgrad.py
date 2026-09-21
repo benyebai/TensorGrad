@@ -97,6 +97,140 @@ class Tensor:
         other = other if isinstance(other, Tensor) else Tensor(other)
         return other * self
 
+    # only support constant exponents! Gets tricky if log comes into play and dont really need it
+    def __pow__(self, exponent):
+        # removed the ability for the exponent to be a value, because it screws shi up
+        res = Tensor(self.data ** exponent, (self, ))
+
+        def _backward():
+            # ok so it would look like
+            # x ** constant = z
+            # then dz/dx = constant x x^(constant - 1)
+            self.grad += (exponent * (self.data ** (exponent - 1))) * res.grad
+
+        res._backward = _backward
+
+        return res
+
+    def exp(self):
+        res = Tensor(np.exp(self.data), (self,))
+
+        def _backward():
+            # ok so it would look like
+            # y = e^x, uh if i remember correct
+            # then dy/dx = e^x
+            self.grad += res.data * res.grad
+
+        res._backward = _backward
+        return res
+
+    # ezpz
+    def __truediv__(self, other):
+        return self * other ** -1
+
+    def __rtruediv__(self, other):
+        return Tensor(other) / self
+
+
+    def sum(self, axis=None, keepdims=False):
+        res = Tensor(np.sum(self.data, axis=axis, keepdims=keepdims), (self,))
+
+        def _backward():
+            grad = res.grad
+
+            # if numpy removed reduced axes, put them back as size-1 axes.
+            if axis is not None and not keepdims:
+                axes = (axis,) if isinstance(axis, int) else tuple(axis)
+                axes = tuple(
+                    #convert negative axes to positive
+                    current_axis % self.data.ndim
+                    for current_axis in axes
+                )
+
+                # added the 1 axis to the right spot
+                for current_axis in sorted(axes):
+                    grad = np.expand_dims(grad, axis=current_axis)
+
+            # Now that we have the right shape, turn them all into the grad
+            self.grad += np.broadcast_to(grad, self.data.shape)
+
+        res._backward = _backward
+        return res
+
+    def mean(self, axis=None, keepdims=False):
+        res = Tensor(np.mean(self.data, axis=axis, keepdims=keepdims), (self,))
+
+        # build our axis a bit earlier since we will need it to get the total
+        # amount of elements in our mean
+        if axis is None:
+            axes = tuple(range(self.data.ndim))
+        else:
+            axes = (axis,) if isinstance(axis, int) else tuple(axis)
+            axes = tuple(
+                current_axis % self.data.ndim
+                for current_axis in axes
+            )
+
+        # the total elements that we added up
+        count = 1
+        for current_axis in axes:
+            count *= self.data.shape[current_axis]
+
+        # same idea as sum, just instead of grad, its just grad/total_elements_added
+        def _backward():
+            grad = res.grad / count
+
+            if axis is not None and not keepdims:
+                for current_axis in sorted(axes):
+                    grad = np.expand_dims(grad, axis=current_axis)
+
+            self.grad += np.broadcast_to(grad, self.data.shape)
+
+        res._backward = _backward
+        return res
+
+    def reshape(self, *shape):
+        res = Tensor(self.data.reshape(*shape), (self,))
+
+        def _backward():
+            self.grad += res.grad.reshape(self.data.shape)
+
+        res._backward = _backward
+        return res
+
+    def transpose(self, *axes):
+        res = Tensor(self.data.transpose(*axes), (self,))
+
+        def _backward():
+            # if there is no axes, then tranpose reversed so just tranpose again
+            if len(axes) == 0:
+                self.grad += res.grad.transpose()
+            else:
+                # this one is weird, based on the transpose u have to find out where the og
+                # dimension went, so argsort just does that for u
+                self.grad += res.grad.transpose(tuple(np.argsort(axes)))
+
+        res._backward = _backward
+        return res
+
+    def __matmul__(self, other):
+        res = Tensor(self.data @ other.data, (self, other))
+
+        def _backward():
+            # we have to only swap the last 2 indices since matrix mult
+            # only the last 2 are transposed the rest are batches
+            self_transposed = np.swapaxes(self.data, -1, -2)
+            other_transposed = np.swapaxes(other.data, -1, -2)
+
+            # deriv for self shoudl be res.grad @ B.tranpose()
+            # and since we are supporting broadcast need to collapse
+            self.grad += sum_to_shape(res.grad @ other_transposed, self.data.shape)
+            # deriv for other shoudl be A.tranpose() @ G
+            other.grad += sum_to_shape(self_transposed @ res.grad, other.data.shape)
+
+        res._backward = _backward
+        return res
+
     def backward(self):
         topologialReverseOrder = []
         visited = set()
