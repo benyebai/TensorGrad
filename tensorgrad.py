@@ -217,16 +217,43 @@ class Tensor:
         res = Tensor(self.data @ other.data, (self, other))
 
         def _backward():
-            # we have to only swap the last 2 indices since matrix mult
-            # only the last 2 are transposed the rest are batches
-            self_transposed = np.swapaxes(self.data, -1, -2)
-            other_transposed = np.swapaxes(other.data, -1, -2)
+            self_was_vector = self.data.ndim == 1
+            other_was_vector = other.data.ndim == 1
 
-            # deriv for self shoudl be res.grad @ B.tranpose()
-            # and since we are supporting broadcast need to collapse
-            self.grad += sum_to_shape(res.grad @ other_transposed, self.data.shape)
-            # deriv for other shoudl be A.tranpose() @ G
-            other.grad += sum_to_shape(self_transposed @ res.grad, other.data.shape)
+            # turn our first vector into a row of 1, n
+            self_matrix = (
+                np.expand_dims(self.data, axis=-2)
+                if self_was_vector
+                else self.data
+            )
+            # turn our second vector into a row of n, 1
+            other_matrix = (
+                np.expand_dims(other.data, axis=-1)
+                if other_was_vector
+                else other.data
+            )
+
+            # restore the matrix axes numpy removed from the forward
+            grad = res.grad
+            if self_was_vector and other_was_vector:
+                grad = grad.reshape(1, 1)
+            elif self_was_vector:
+                grad = np.expand_dims(grad, axis=-2)
+            elif other_was_vector:
+                grad = np.expand_dims(grad, axis=-1)
+
+            self_contribution = grad @ np.swapaxes(other_matrix, -1, -2)
+            other_contribution = np.swapaxes(self_matrix, -1, -2) @ grad
+
+            # remove the same temporary axes before reducing broadcasted
+            # batch dimensions back to each parent's original shape.
+            if self_was_vector:
+                self_contribution = np.squeeze(self_contribution, axis=-2)
+            if other_was_vector:
+                other_contribution = np.squeeze(other_contribution, axis=-1)
+
+            self.grad += sum_to_shape(self_contribution, self.data.shape)
+            other.grad += sum_to_shape(other_contribution, other.data.shape)
 
         res._backward = _backward
         return res
