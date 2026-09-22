@@ -213,6 +213,17 @@ class Tensor:
         res._backward = _backward
         return res
 
+    def __getitem__(self, index):
+        res = Tensor(self.data[index], (self,))
+
+        def _backward():
+            contribution = np.zeros_like(self.data)
+            contribution[index] += res.grad
+            self.grad += contribution
+
+        res._backward = _backward
+        return res
+
     def __matmul__(self, other):
         res = Tensor(self.data @ other.data, (self, other))
 
