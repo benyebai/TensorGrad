@@ -269,6 +269,22 @@ class Tensor:
         res._backward = _backward
         return res
 
+    def log(self):
+        res = Tensor(np.log(self.data), (self,))
+
+        # dy = log(x) -> 1/x
+        def _backward():
+            self.grad += res.grad * 1 / self.data
+
+        res._backward = _backward
+        return res
+
+    def sigmoid(self):
+        return 1 / (1 + (-self).exp())
+
+    def silu(self):
+        return self * self.sigmoid()
+
     def backward(self):
         topologialReverseOrder = []
         visited = set()
