@@ -285,6 +285,50 @@ class Tensor:
     def silu(self):
         return self * self.sigmoid()
 
+    def logsumexp(self, axis=None, keepdims=False):
+        # Always retain reduced axes internally for safe broadcasting.
+        maximum = np.max(self.data, axis=axis, keepdims=True)
+        shifted = self.data - maximum
+        exponentials = np.exp(shifted)
+        denominator = np.sum(exponentials, axis=axis, keepdims=True)
+
+        result_with_dims = maximum + np.log(denominator)
+
+        if keepdims:
+            result_data = result_with_dims
+        elif axis is None:
+            result_data = np.squeeze(result_with_dims)
+        else:
+            result_data = np.squeeze(result_with_dims, axis=axis)
+
+        res = Tensor(result_data, (self,))
+
+        def _backward():
+            grad = res.grad
+
+            # this code is so ugly, but this is just restoring removed axis so that when we
+            # muitiply it by the res.grad it broadcasts properly
+            if axis is not None and not keepdims:
+                axes = (axis,) if isinstance(axis, int) else tuple(axis)
+                axes = tuple(
+                    current_axis % self.data.ndim
+                    for current_axis in axes
+                )
+
+                for current_axis in sorted(axes):
+                    grad = np.expand_dims(grad, axis=current_axis)
+
+            # The derivative of logsumexp is softmax.
+            # so just e^x / sum(e^xi - m)
+            probabilities = exponentials / denominator
+            self.grad += np.broadcast_to(grad, self.data.shape) * probabilities
+
+        res._backward = _backward
+        return res
+
+    def softmax(self, axis):
+        return (self - self.logsumexp(axis=axis, keepdims=True)).exp()
+
     def backward(self, gradient=None):
         topologialReverseOrder = []
         visited = set()
