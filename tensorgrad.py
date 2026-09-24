@@ -285,7 +285,7 @@ class Tensor:
     def silu(self):
         return self * self.sigmoid()
 
-    def backward(self):
+    def backward(self, gradient=None):
         topologialReverseOrder = []
         visited = set()
 
@@ -302,7 +302,13 @@ class Tensor:
         create_top_reverse_order(self)
 
         # this is important haha oops
-        self.grad = np.ones_like(self.data)
+        if gradient is None:
+            self.grad = np.ones_like(self.data)
+        else:
+            gradient = np.asarray(gradient, dtype=np.float64)
+            if gradient.shape != self.data.shape:
+                raise ValueError("Gradient shape must match output shape")
+            self.grad = gradient.copy()
 
         for n in reversed(topologialReverseOrder):
             n._backward()
