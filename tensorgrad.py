@@ -329,6 +329,9 @@ class Tensor:
     def softmax(self, axis):
         return (self - self.logsumexp(axis=axis, keepdims=True)).exp()
 
+    def detach(self):
+        return Tensor(self.data.copy())
+
     def backward(self, gradient=None):
         topologialReverseOrder = []
         visited = set()

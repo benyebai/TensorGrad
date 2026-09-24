@@ -1,6 +1,6 @@
 .venv/
 __pycache__/
-tests/
+tests/test_nn.py
 minigrad.py
 nn.py
 TODO.md
