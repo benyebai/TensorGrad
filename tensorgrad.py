@@ -2,6 +2,7 @@
 Similar to Value class in MiniGrad now using numpy arrays
 https://github.com/benyebai/MiniGrad
 """
+
 import numpy as np
 
 
@@ -27,6 +28,7 @@ def sum_to_shape(grad, shape):
             raise ValueError("ye this collapsation is not valid my guy")
 
     return grad
+
 
 class Tensor:
     def __init__(self, data, children=(), name=""):
@@ -100,7 +102,7 @@ class Tensor:
     # only support constant exponents! Gets tricky if log comes into play and dont really need it
     def __pow__(self, exponent):
         # removed the ability for the exponent to be a value, because it screws shi up
-        res = Tensor(self.data ** exponent, (self, ))
+        res = Tensor(self.data**exponent, (self,))
 
         def _backward():
             # ok so it would look like
@@ -126,11 +128,10 @@ class Tensor:
 
     # ezpz
     def __truediv__(self, other):
-        return self * other ** -1
+        return self * other**-1
 
     def __rtruediv__(self, other):
         return Tensor(other) / self
-
 
     def sum(self, axis=None, keepdims=False):
         res = Tensor(np.sum(self.data, axis=axis, keepdims=keepdims), (self,))
@@ -142,7 +143,7 @@ class Tensor:
             if axis is not None and not keepdims:
                 axes = (axis,) if isinstance(axis, int) else tuple(axis)
                 axes = tuple(
-                    #convert negative axes to positive
+                    # convert negative axes to positive
                     current_axis % self.data.ndim
                     for current_axis in axes
                 )
@@ -166,10 +167,7 @@ class Tensor:
             axes = tuple(range(self.data.ndim))
         else:
             axes = (axis,) if isinstance(axis, int) else tuple(axis)
-            axes = tuple(
-                current_axis % self.data.ndim
-                for current_axis in axes
-            )
+            axes = tuple(current_axis % self.data.ndim for current_axis in axes)
 
         # the total elements that we added up
         count = 1
@@ -233,15 +231,11 @@ class Tensor:
 
             # turn our first vector into a row of 1, n
             self_matrix = (
-                np.expand_dims(self.data, axis=-2)
-                if self_was_vector
-                else self.data
+                np.expand_dims(self.data, axis=-2) if self_was_vector else self.data
             )
             # turn our second vector into a row of n, 1
             other_matrix = (
-                np.expand_dims(other.data, axis=-1)
-                if other_was_vector
-                else other.data
+                np.expand_dims(other.data, axis=-1) if other_was_vector else other.data
             )
 
             # restore the matrix axes numpy removed from the forward
@@ -310,10 +304,7 @@ class Tensor:
             # muitiply it by the res.grad it broadcasts properly
             if axis is not None and not keepdims:
                 axes = (axis,) if isinstance(axis, int) else tuple(axis)
-                axes = tuple(
-                    current_axis % self.data.ndim
-                    for current_axis in axes
-                )
+                axes = tuple(current_axis % self.data.ndim for current_axis in axes)
 
                 for current_axis in sorted(axes):
                     grad = np.expand_dims(grad, axis=current_axis)
@@ -331,6 +322,16 @@ class Tensor:
 
     def detach(self):
         return Tensor(self.data.copy())
+
+    def tanh(self):
+        res = Tensor(np.tanh(self.data), (self,))
+
+        def _backward():
+            # d/dx tanh(x) = 1 - tanh(x)^2
+            self.grad += (1 - res.data**2) * res.grad
+
+        res._backward = _backward
+        return res
 
     def backward(self, gradient=None):
         topologialReverseOrder = []

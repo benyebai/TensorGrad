@@ -9,8 +9,9 @@ import numpy as np
 from tensorgrad import Tensor
 
 
-def assert_gradcheck(test_case, function, *input_data, epsilon=1e-6,
-                     rtol=1e-5, atol=1e-7):
+def assert_gradcheck(
+    test_case, function, *input_data, epsilon=1e-6, rtol=1e-5, atol=1e-7
+):
     """Compare TensorGrad gradients with central finite differences."""
     arrays = [np.asarray(data, dtype=np.float64).copy() for data in input_data]
     tensors = [Tensor(array.copy()) for array in arrays]
@@ -182,9 +183,13 @@ class TestTensorFoundation(unittest.TestCase):
         matrix = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         row = Tensor([10.0, 20.0, 30.0])
         result = matrix * row
-        np.testing.assert_array_equal(result.data, [[10.0, 40.0, 90.0], [40.0, 100.0, 180.0]])
+        np.testing.assert_array_equal(
+            result.data, [[10.0, 40.0, 90.0], [40.0, 100.0, 180.0]]
+        )
         result.backward()
-        np.testing.assert_array_equal(matrix.grad, [[10.0, 20.0, 30.0], [10.0, 20.0, 30.0]])
+        np.testing.assert_array_equal(
+            matrix.grad, [[10.0, 20.0, 30.0], [10.0, 20.0, 30.0]]
+        )
         np.testing.assert_array_equal(row.grad, [5.0, 7.0, 9.0])
 
     def test_numeric_multiplication_both_orders(self):
@@ -194,7 +199,7 @@ class TestTensorFoundation(unittest.TestCase):
 
     def test_power_backward(self):
         value = Tensor([2.0, 3.0])
-        result = value ** 3
+        result = value**3
         np.testing.assert_array_equal(result.data, [8.0, 27.0])
         result.backward()
         np.testing.assert_array_equal(value.grad, [12.0, 27.0])
@@ -243,9 +248,41 @@ class TestTensorFoundation(unittest.TestCase):
             weights.data * expected_derivative,
         )
 
+    def test_tanh_forward_and_backward(self):
+        value = Tensor([-2.0, 0.0, 2.0])
+        result = value.tanh()
+
+        weights = Tensor([1.0, 2.0, 3.0])
+        (result * weights).sum().backward()
+
+        expected = np.tanh(value.data)
+        expected_derivative = 1.0 - expected**2
+
+        np.testing.assert_allclose(result.data, expected)
+        np.testing.assert_allclose(
+            value.grad,
+            weights.data * expected_derivative,
+        )
+
+    def test_tanh_passes_finite_difference_gradcheck(self):
+        weights = np.array(
+            [
+                [1.0, -2.0, 0.5],
+                [3.0, 0.25, -1.0],
+            ]
+        )
+
+        def expression(value):
+            return (value.tanh() * Tensor(weights)).sum()
+
+        assert_gradcheck(
+            self,
+            expression,
+            [[-1.5, 0.0, 2.0], [0.7, -0.3, 1.2]],
+        )
+
     def test_logsumexp_axis_keepdims_forward(self):
-        data = np.array([[1.0, 2.0, 3.0],
-                         [-2.0, 0.0, 4.0]])
+        data = np.array([[1.0, 2.0, 3.0], [-2.0, 0.0, 4.0]])
         value = Tensor(data)
 
         result = value.logsumexp(axis=1, keepdims=True)
@@ -258,8 +295,7 @@ class TestTensorFoundation(unittest.TestCase):
         np.testing.assert_allclose(result.data, expected)
 
     def test_logsumexp_axis_without_keepdims_backward(self):
-        data = np.array([[1.0, 2.0, 3.0],
-                         [-2.0, 0.0, 4.0]])
+        data = np.array([[1.0, 2.0, 3.0], [-2.0, 0.0, 4.0]])
         value = Tensor(data)
         weights = Tensor([2.0, 3.0])
 
@@ -267,9 +303,7 @@ class TestTensorFoundation(unittest.TestCase):
         (result * weights).sum().backward()
 
         shifted = data - np.max(data, axis=1, keepdims=True)
-        probabilities = np.exp(shifted) / np.sum(
-            np.exp(shifted), axis=1, keepdims=True
-        )
+        probabilities = np.exp(shifted) / np.sum(np.exp(shifted), axis=1, keepdims=True)
         expected_gradient = probabilities * weights.data[:, None]
 
         self.assertEqual(result.data.shape, (2,))
@@ -280,48 +314,42 @@ class TestTensorFoundation(unittest.TestCase):
         result = value.logsumexp(axis=-1)
 
         self.assertTrue(np.all(np.isfinite(result.data)))
-        expected = np.array([
-            1000.0 + np.log1p(np.exp(-1.0)),
-            -999.0 + np.log1p(np.exp(-1.0)),
-        ])
+        expected = np.array(
+            [
+                1000.0 + np.log1p(np.exp(-1.0)),
+                -999.0 + np.log1p(np.exp(-1.0)),
+            ]
+        )
         np.testing.assert_allclose(result.data, expected)
 
     def test_softmax_last_axis_forward_and_normalization(self):
-        data = np.array([[1.0, 2.0, 3.0],
-                         [1000.0, 1001.0, 1002.0]])
+        data = np.array([[1.0, 2.0, 3.0], [1000.0, 1001.0, 1002.0]])
         value = Tensor(data)
         result = value.softmax(axis=-1)
 
         shifted = data - np.max(data, axis=-1, keepdims=True)
-        expected = np.exp(shifted) / np.sum(
-            np.exp(shifted), axis=-1, keepdims=True
-        )
+        expected = np.exp(shifted) / np.sum(np.exp(shifted), axis=-1, keepdims=True)
 
         self.assertTrue(np.all(np.isfinite(result.data)))
         np.testing.assert_allclose(result.data, expected)
         np.testing.assert_allclose(result.data.sum(axis=-1), np.ones(2))
 
     def test_softmax_backward_with_nonuniform_upstream(self):
-        data = np.array([[0.2, -0.4, 1.1],
-                         [1.5, 0.3, -0.7]])
-        upstream = np.array([[1.0, 2.0, -1.0],
-                             [0.5, -2.0, 3.0]])
+        data = np.array([[0.2, -0.4, 1.1], [1.5, 0.3, -0.7]])
+        upstream = np.array([[1.0, 2.0, -1.0], [0.5, -2.0, 3.0]])
         value = Tensor(data)
         result = value.softmax(axis=1)
         (result * Tensor(upstream)).sum().backward()
 
         shifted = data - np.max(data, axis=1, keepdims=True)
-        probabilities = np.exp(shifted) / np.sum(
-            np.exp(shifted), axis=1, keepdims=True
-        )
+        probabilities = np.exp(shifted) / np.sum(np.exp(shifted), axis=1, keepdims=True)
         expected_gradient = probabilities * (
             upstream - np.sum(upstream * probabilities, axis=1, keepdims=True)
         )
         np.testing.assert_allclose(value.grad, expected_gradient)
 
     def test_softmax_passes_finite_difference_gradcheck(self):
-        weights = np.array([[1.0, -0.5, 2.0],
-                            [-1.0, 3.0, 0.25]])
+        weights = np.array([[1.0, -0.5, 2.0], [-1.0, 3.0, 0.25]])
 
         def expression(value):
             return (value.softmax(axis=1) * Tensor(weights)).sum()
@@ -356,7 +384,7 @@ class TestTensorFoundation(unittest.TestCase):
 
     def test_composed_expression_passes_finite_difference_gradcheck(self):
         def expression(left, right):
-            return ((left * right).silu() + left ** 2).mean()
+            return ((left * right).silu() + left**2).mean()
 
         assert_gradcheck(
             self,
@@ -438,7 +466,9 @@ class TestTensorFoundation(unittest.TestCase):
         value = Tensor(np.arange(24.0).reshape(2, 3, 4))
         weights = Tensor(np.arange(1.0, 25.0).reshape(3, 4, 2))
         transposed = value.transpose(1, 2, 0)
-        np.testing.assert_array_equal(transposed.data, np.transpose(value.data, (1, 2, 0)))
+        np.testing.assert_array_equal(
+            transposed.data, np.transpose(value.data, (1, 2, 0))
+        )
         (transposed * weights).sum().backward()
         np.testing.assert_array_equal(value.grad, np.transpose(weights.data, (2, 0, 1)))
 
@@ -447,18 +477,14 @@ class TestTensorFoundation(unittest.TestCase):
         selected = value[1]
         (selected * Tensor([2.0, 3.0, 4.0])).sum().backward()
         np.testing.assert_array_equal(selected.data, [4.0, 5.0, 6.0])
-        np.testing.assert_array_equal(value.grad,
-                                      [[0.0, 0.0, 0.0],
-                                       [2.0, 3.0, 4.0]])
+        np.testing.assert_array_equal(value.grad, [[0.0, 0.0, 0.0], [2.0, 3.0, 4.0]])
 
     def test_index_tuple_scalar_backward(self):
         value = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         selected = value[0, 2]
         (selected * 7.0).backward()
         np.testing.assert_array_equal(selected.data, np.array(3.0))
-        np.testing.assert_array_equal(value.grad,
-                                      [[0.0, 0.0, 7.0],
-                                       [0.0, 0.0, 0.0]])
+        np.testing.assert_array_equal(value.grad, [[0.0, 0.0, 7.0], [0.0, 0.0, 0.0]])
 
     def test_index_slice_backward(self):
         value = Tensor(np.arange(12.0).reshape(3, 4))
@@ -466,34 +492,27 @@ class TestTensorFoundation(unittest.TestCase):
         weights = Tensor([[1.0, 2.0], [3.0, 4.0]])
         (selected * weights).sum().backward()
         np.testing.assert_array_equal(selected.data, [[5.0, 6.0], [9.0, 10.0]])
-        np.testing.assert_array_equal(value.grad,
-                                      [[0.0, 0.0, 0.0, 0.0],
-                                       [0.0, 1.0, 2.0, 0.0],
-                                       [0.0, 3.0, 4.0, 0.0]])
+        np.testing.assert_array_equal(
+            value.grad,
+            [[0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 2.0, 0.0], [0.0, 3.0, 4.0, 0.0]],
+        )
 
     def test_matrix_multiplication_2d_forward_and_backward(self):
-        left = Tensor([[1.0, 2.0, 3.0],
-                       [4.0, 5.0, 6.0]])
-        right = Tensor([[7.0, 8.0],
-                        [9.0, 10.0],
-                        [11.0, 12.0]])
-        upstream = Tensor([[1.0, 2.0],
-                           [3.0, 4.0]])
+        left = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        right = Tensor([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]])
+        upstream = Tensor([[1.0, 2.0], [3.0, 4.0]])
 
         product = left @ right
         loss = (product * upstream).sum()
         loss.backward()
 
-        np.testing.assert_array_equal(product.data,
-                                      [[58.0, 64.0],
-                                       [139.0, 154.0]])
-        np.testing.assert_array_equal(left.grad,
-                                      [[23.0, 29.0, 35.0],
-                                       [53.0, 67.0, 81.0]])
-        np.testing.assert_array_equal(right.grad,
-                                      [[13.0, 18.0],
-                                       [17.0, 24.0],
-                                       [21.0, 30.0]])
+        np.testing.assert_array_equal(product.data, [[58.0, 64.0], [139.0, 154.0]])
+        np.testing.assert_array_equal(
+            left.grad, [[23.0, 29.0, 35.0], [53.0, 67.0, 81.0]]
+        )
+        np.testing.assert_array_equal(
+            right.grad, [[13.0, 18.0], [17.0, 24.0], [21.0, 30.0]]
+        )
 
     def test_matrix_multiplication_3d_batched_forward_and_backward(self):
         left_data = np.arange(1.0, 13.0).reshape(2, 2, 3)
@@ -586,8 +605,7 @@ class TestTensorFoundation(unittest.TestCase):
         np.testing.assert_array_equal(right.grad, [3.0, 6.0, 9.0])
 
     def test_matrix_multiplication_matrix_by_vector_backward(self):
-        matrix = Tensor([[1.0, 2.0, 3.0],
-                         [4.0, 5.0, 6.0]])
+        matrix = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         vector = Tensor([7.0, 8.0, 9.0])
         upstream = Tensor([2.0, 3.0])
 
@@ -595,16 +613,14 @@ class TestTensorFoundation(unittest.TestCase):
         (product * upstream).sum().backward()
 
         np.testing.assert_array_equal(product.data, [50.0, 122.0])
-        np.testing.assert_array_equal(matrix.grad,
-                                      [[14.0, 16.0, 18.0],
-                                       [21.0, 24.0, 27.0]])
+        np.testing.assert_array_equal(
+            matrix.grad, [[14.0, 16.0, 18.0], [21.0, 24.0, 27.0]]
+        )
         np.testing.assert_array_equal(vector.grad, [14.0, 19.0, 24.0])
 
     def test_matrix_multiplication_vector_by_matrix_backward(self):
         vector = Tensor([1.0, 2.0, 3.0])
-        matrix = Tensor([[4.0, 5.0],
-                         [6.0, 7.0],
-                         [8.0, 9.0]])
+        matrix = Tensor([[4.0, 5.0], [6.0, 7.0], [8.0, 9.0]])
         upstream = Tensor([2.0, 3.0])
 
         product = vector @ matrix
@@ -612,11 +628,7 @@ class TestTensorFoundation(unittest.TestCase):
 
         np.testing.assert_array_equal(product.data, [40.0, 46.0])
         np.testing.assert_array_equal(vector.grad, [23.0, 33.0, 43.0])
-        np.testing.assert_array_equal(matrix.grad,
-                                      [[2.0, 3.0],
-                                       [4.0, 6.0],
-                                       [6.0, 9.0]])
-
+        np.testing.assert_array_equal(matrix.grad, [[2.0, 3.0], [4.0, 6.0], [6.0, 9.0]])
 
 
 if __name__ == "__main__":
