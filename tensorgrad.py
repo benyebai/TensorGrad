@@ -216,7 +216,9 @@ class Tensor:
 
         def _backward():
             contribution = np.zeros_like(self.data)
-            contribution[index] += res.grad
+            # very werid edge case where if u select the index twice, numpy actually
+            # just treats it as one
+            np.add.at(contribution, index, res.grad)
             self.grad += contribution
 
         res._backward = _backward
