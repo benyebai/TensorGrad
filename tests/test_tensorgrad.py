@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from tensorgrad import Tensor
+from tensorgrad import Tensor, concatenate
 
 
 def assert_gradcheck(
@@ -86,6 +86,51 @@ class TestTensorFoundation(unittest.TestCase):
         result.backward()
         np.testing.assert_array_equal(result.grad, [1.0, 1.0])
         np.testing.assert_array_equal(value.grad, [4.0, 4.0])
+
+    def test_concatenate_forward_along_first_axis(self):
+        first = Tensor([[1.0, 2.0]])
+        second = Tensor([[3.0, 4.0], [5.0, 6.0]])
+
+        result = concatenate([first, second], axis=0)
+
+        np.testing.assert_array_equal(
+            result.data,
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
+        )
+
+    def test_concatenate_negative_axis(self):
+        first = Tensor(np.ones((1, 2, 2)))
+        second = Tensor(np.full((1, 2, 3), 2.0))
+
+        result = concatenate([first, second], axis=-1)
+
+        self.assertEqual(result.data.shape, (1, 2, 5))
+        np.testing.assert_array_equal(result.data[..., :2], first.data)
+        np.testing.assert_array_equal(result.data[..., 2:], second.data)
+
+    def test_concatenate_backward_splits_gradient_between_inputs(self):
+        first = Tensor(np.zeros((1, 2, 2)))
+        second = Tensor(np.zeros((1, 2, 3)))
+        upstream = np.arange(10.0).reshape(1, 2, 5)
+
+        result = concatenate([first, second], axis=-1)
+        result.backward(upstream)
+
+        np.testing.assert_array_equal(first.grad, upstream[..., :2])
+        np.testing.assert_array_equal(second.grad, upstream[..., 2:])
+
+    def test_concatenate_accumulates_gradient_when_input_is_reused(self):
+        value = Tensor([[1.0, 2.0]])
+        upstream = np.array([[1.0, 2.0, 3.0, 4.0]])
+
+        result = concatenate([value, value], axis=-1)
+        result.backward(upstream)
+
+        np.testing.assert_array_equal(value.grad, [[4.0, 6.0]])
+
+    def test_concatenate_rejects_empty_tensor_list(self):
+        with self.assertRaises(ValueError):
+            concatenate([])
 
     def test_add_scalar_forward_and_backward(self):
         left = Tensor(2.0)

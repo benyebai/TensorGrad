@@ -365,7 +365,6 @@ class Tensor:
 
 
 def concatenate(tensors: list[Tensor], axis: int = 0) -> Tensor:
-    """Join tensors along one axis while preserving gradient flow."""
     if len(tensors) == 0:
         raise ValueError("Cannot concatenate an empty list of tensors")
 
