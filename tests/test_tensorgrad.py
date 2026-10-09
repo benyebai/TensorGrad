@@ -497,6 +497,13 @@ class TestTensorFoundation(unittest.TestCase):
             [[0.0, 0.0, 0.0, 0.0], [0.0, 1.0, 2.0, 0.0], [0.0, 3.0, 4.0, 0.0]],
         )
 
+    def test_repeated_advanced_indices_accumulate_backward(self):
+        value = Tensor([3.0, 5.0, 7.0])
+
+        value[np.array([1, 1])].sum().backward()
+
+        np.testing.assert_array_equal(value.grad, [0.0, 2.0, 0.0])
+
     def test_matrix_multiplication_2d_forward_and_backward(self):
         left = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         right = Tensor([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]])

@@ -362,3 +362,32 @@ class Tensor:
 
         for n in reversed(topologialReverseOrder):
             n._backward()
+
+
+def concatenate(tensors: list[Tensor], axis: int = 0) -> Tensor:
+    """Join tensors along one axis while preserving gradient flow."""
+    if len(tensors) == 0:
+        raise ValueError("Cannot concatenate an empty list of tensors")
+
+    result_data = np.concatenate(
+        [tensor.data for tensor in tensors],
+        axis=axis,
+    )
+    normalized_axis = axis % result_data.ndim
+    result = Tensor(result_data, tuple(tensors))
+
+    def _backward():
+        start = 0
+
+        for tensor in tensors:
+            size = tensor.data.shape[normalized_axis]
+            end = start + size
+
+            slices = [slice(None)] * result.grad.ndim
+            slices[normalized_axis] = slice(start, end)
+            tensor.grad += result.grad[tuple(slices)]
+
+            start = end
+
+    result._backward = _backward
+    return result
